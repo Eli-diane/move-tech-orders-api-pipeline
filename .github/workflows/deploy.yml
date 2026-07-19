@@ -21,6 +21,42 @@ jobs:
       - uses: actions/checkout@v4
       - name: Login no registry
         run: |
+          echo "${{ secrets.MGC_REGISTRY_PASSWORD }}" | docker login container-registry.br-se1.magalu.cloud -u "${{ secrets.MGC_REGISTRY_USER }}" --password-stdin
+      - name: Build e push da imagem
+        run: |
+          docker build -t container-registry.br-se1.magalu.cloud/lab-registry-elidiane/orders-api:${{ github.sha }} .
+          docker push container-registry.br-se1.magalu.cloud/lab-registry-elidiane/orders-api:${{ github.sha }}
+      - name: Configurar kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.MGC_KUBECONFIG }}" > ~/.kube/config
+      - name: Deploy no Kubernetes
+        run: |
+          export IMAGE=container-registry.br-se1.magalu.cloud/lab-registry-elidiane/orders-api:${{ github.sha }}
+          envsubst < k8s/app.yaml | kubectl apply -f -
+          kubectl rollout status deployment/orders-api --timeout=120sname: Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install fastapi "scalar-fastapi>=1.8.2" uvicorn pytest httpx
+      - run: pytest
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login no registry
+        run: |
           REGISTRY_HOST=$(echo "${{ secrets.MGC_REGISTRY_NAME }}" | cut -d'/' -f1)
           echo "${{ secrets.MGC_REGISTRY_PASSWORD }}" | docker login https://$REGISTRY_HOST \
             -u "${{ secrets.MGC_REGISTRY_USER }}" --password-stdin
